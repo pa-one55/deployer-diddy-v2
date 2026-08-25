@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logs — deployer-diddy</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: monospace;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      padding: 2rem;
+    }
+    a.back {
+      font-size: 0.8rem;
+      color: #666;
+      text-decoration: none;
+      display: inline-block;
+      margin-bottom: 1.5rem;
+    }
+    a.back:hover { color: #aaa; }
+    h1 {
+      font-size: 1.2rem;
+      margin-bottom: 1.5rem;
+      color: #fff;
+    }
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-family: monospace;
+    }
+    button:hover { border-color: #555; }
+    #status {
+      font-size: 0.75rem;
+      color: #666;
+    }
+    #status.polling { color: #2ecc71; }
+    pre {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 1rem;
+      font-size: 0.75rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 200px;
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <a href="dashboard.html" class="back">← back to dashboard</a>
+  <h1 id="title">Deployment Logs</h1>
+
+  <div class="controls">
+    <span id="status">idle</span>
+    <button onclick="togglePolling()" id="pollBtn">Start auto-refresh</button>
+    <button onclick="fetchLogs()">Refresh now</button>
+  </div>
+
+  <pre id="logOutput">Loading logs...</pre>
+
+  <script>
+    const jwt = localStorage.getItem('jwt');
+    if (!jwt) {
+      window.location.href = '/';
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const deploymentId = params.get('id');
+
+    if (!deploymentId) {
+      document.getElementById('logOutput').textContent = 'No deployment ID provided.';
+    }
+
+    let pollInterval = null;
+
+    async function fetchLogs() {
+      if (!deploymentId) return;
+
+      try {
+        const res = await fetch(`/api/deploy/logs/${deploymentId}`, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+
+        const text = await res.text();
+
+        if (!res.ok) {
+          document.getElementById('logOutput').textContent = `Error: ${text}`;
+          return;
+        }
+
+        const el = document.getElementById('logOutput');
+        const atBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 10;
+        el.textContent = text;
+        if (atBottom) el.scrollTop = el.scrollHeight;
+      } catch (err) {
+        document.getElementById('logOutput').textContent = 'Failed to fetch logs.';
+      }
+    }
+
+    function togglePolling() {
+      const btn = document.getElementById('pollBtn');
+      const status = document.getElementById('status');
+
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        btn.textContent = 'Start auto-refresh';
+        status.textContent = 'idle';
+        status.className = '';
+      } else {
+        fetchLogs();
+        pollInterval = setInterval(fetchLogs, 3000);
+        btn.textContent = 'Stop auto-refresh';
+        status.textContent = 'polling every 3s';
+        status.className = 'polling';
+      }
+    }
+
+    fetchLogs();
+  </script>
+</body>
+</html>

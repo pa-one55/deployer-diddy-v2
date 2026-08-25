@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — deployer-diddy</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: monospace;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      padding: 2rem;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    h1 { font-size: 1.5rem; color: #fff; }
+    .btn {
+      padding: 0.5rem 1rem;
+      background: #e0e0e0;
+      color: #0f0f0f;
+      text-decoration: none;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      border: none;
+      cursor: pointer;
+    }
+    .btn:hover { background: #fff; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.75rem;
+      border-bottom: 1px solid #222;
+    }
+    th { color: #666; font-size: 0.8rem; }
+    td { font-size: 0.85rem; }
+    .status {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+    }
+    .status.running { background: #27ae60; color: #000; }
+    .status.building { background: #f39c12; color: #000; }
+    .status.failed { background: #c0392b; color: #fff; }
+    a.link { color: #3498db; text-decoration: none; }
+    a.link:hover { text-decoration: underline; }
+    #loading { text-align: center; color: #666; margin-top: 3rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dashboard</h1>
+    <a href="deploy.html" class="btn">Deploy New</a>
+  </header>
+
+  <div id="loading">Loading deployments...</div>
+
+  <table id="deploymentsTable" style="display: none;">
+    <thead>
+      <tr>
+        <th>Repo</th>
+        <th>Status</th>
+        <th>Port</th>
+        <th>Live URL</th>
+        <th>Logs</th>
+      </tr>
+    </thead>
+    <tbody id="deploymentsBody"></tbody>
+  </table>
+
+  <script>
+    const token = new URLSearchParams(window.location.search).get('token');
+
+    if (token) {
+      localStorage.setItem('jwt', token);
+      window.history.replaceState({}, document.title, '/dashboard.html');
+    }
+
+    const jwt = localStorage.getItem('jwt');
+    if (!jwt) {
+      window.location.href = '/';
+    }
+
+    async function fetchDeployments() {
+      const res = await fetch('/api/deploy/list', {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+
+      if (!res.ok) {
+        alert('Failed to fetch deployments');
+        return;
+      }
+
+      const data = await res.json();
+      const tbody = document.getElementById('deploymentsBody');
+      tbody.innerHTML = '';
+
+      if (data.deployments.length === 0) {
+        document.getElementById('loading').textContent = 'No deployments yet. Deploy your first app!';
+        return;
+      }
+
+      data.deployments.forEach((d) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${d.repoName}</td>
+          <td><span class="status ${d.status}">${d.status}</span></td>
+          <td>${d.port}</td>
+          <td>${d.liveUrl ? `<a href="${d.liveUrl}" target="_blank" class="link">${d.liveUrl}</a>` : '—'}</td>
+          <td><a href="logs.html?id=${d.id}" class="link">view</a></td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('deploymentsTable').style.display = 'table';
+    }
+
+    fetchDeployments();
+  </script>
+</body>
+</html>

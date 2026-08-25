@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deploy New — deployer-diddy</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: monospace;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+    a.back {
+      font-size: 0.8rem;
+      color: #666;
+      text-decoration: none;
+      display: inline-block;
+      margin-bottom: 2rem;
+    }
+    a.back:hover { color: #aaa; }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: #888;
+      margin-bottom: 0.3rem;
+      margin-top: 1.2rem;
+    }
+    select, input {
+      width: 100%;
+      padding: 0.6rem;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    select:focus, input:focus {
+      outline: none;
+      border-color: #555;
+    }
+    .env-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .env-row input {
+      flex: 1;
+    }
+    button.remove {
+      padding: 0.6rem;
+      background: #c0392b;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+    button.add, button.submit {
+      padding: 0.6rem 1.2rem;
+      background: #e0e0e0;
+      color: #0f0f0f;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+    }
+    button.add:hover, button.submit:hover {
+      background: #fff;
+    }
+    button:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+    #response {
+      margin-top: 1.5rem;
+      padding: 0.75rem;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      display: none;
+    }
+    #response.success { border-color: #27ae60; color: #2ecc71; }
+    #response.error { border-color: #c0392b; color: #e74c3c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="dashboard.html" class="back">← back to dashboard</a>
+    <h1>Deploy New App</h1>
+
+    <label>Select Repository</label>
+    <select id="repoSelect">
+      <option value="">Loading repos...</option>
+    </select>
+
+    <label>Environment Variables (optional)</label>
+    <div id="envVarsContainer"></div>
+    <button class="add" onclick="addEnvRow()">+ Add Env Var</button>
+
+    <button class="submit" id="deployBtn" onclick="deploy()">Deploy</button>
+
+    <div id="response"></div>
+  </div>
+
+  <script>
+    const jwt = localStorage.getItem('jwt');
+    if (!jwt) {
+      window.location.href = '/';
+    }
+
+    let repos = [];
+
+    async function fetchRepos() {
+      const res = await fetch('/api/deploy/repos', {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+
+      if (!res.ok) {
+        alert('Failed to fetch repos');
+        return;
+      }
+
+      const data = await res.json();
+      repos = data.repos;
+
+      const select = document.getElementById('repoSelect');
+      select.innerHTML = '<option value="">— select a repo —</option>';
+      repos.forEach((r) => {
+        const option = document.createElement('option');
+        option.value = JSON.stringify({ name: r.name, url: r.url });
+        option.textContent = r.fullName || r.name;
+        select.appendChild(option);
+      });
+    }
+
+    function addEnvRow() {
+      const container = document.getElementById('envVarsContainer');
+      const row = document.createElement('div');
+      row.className = 'env-row';
+      row.innerHTML = `
+        <input type="text" placeholder="KEY" class="env-key" />
+        <input type="text" placeholder="VALUE" class="env-value" />
+        <button class="remove" onclick="this.parentElement.remove()">×</button>
+      `;
+      container.appendChild(row);
+    }
+
+    async function deploy() {
+      const repoValue = document.getElementById('repoSelect').value;
+      if (!repoValue) {
+        alert('Select a repository');
+        return;
+      }
+
+      const { name, url } = JSON.parse(repoValue);
+
+      const envRows = document.querySelectorAll('.env-row');
+      const envVars = [];
+      envRows.forEach((row) => {
+        const key = row.querySelector('.env-key').value.trim();
+        const value = row.querySelector('.env-value').value.trim();
+        if (key && value) envVars.push({ key, value });
+      });
+
+      const btn = document.getElementById('deployBtn');
+      btn.disabled = true;
+      btn.textContent = 'Deploying...';
+
+      const responseEl = document.getElementById('response');
+      responseEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/deploy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${jwt}`,
+          },
+          body: JSON.stringify({ repoName: name, repoUrl: url, envVars }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          responseEl.textContent = data.error || 'Deployment failed';
+          responseEl.className = 'error';
+        } else {
+          responseEl.textContent = `${data.message}. Deployment ID: ${data.deploymentId}. Check dashboard for status.`;
+          responseEl.className = 'success';
+        }
+      } catch (err) {
+        responseEl.textContent = 'Request failed. Is the server running?';
+        responseEl.className = 'error';
+      }
+
+      responseEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Deploy';
+    }
+
+    fetchRepos();
+  </script>
+</body>
+</html>
