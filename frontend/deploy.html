@@ -200,7 +200,7 @@
           responseEl.textContent = data.error || 'Deployment failed';
           responseEl.className = 'error';
         } else {
-          responseEl.textContent = `${data.message}. Deployment ID: ${data.deploymentId}. Check dashboard for status.`;
+          responseEl.innerHTML = `${data.message}. Deployment ID: ${data.deploymentId}. <a href="dashboard.html" style="color: #3498db; text-decoration: underline;">Go to Dashboard</a>`;
           responseEl.className = 'success';
         }
       } catch (err) {

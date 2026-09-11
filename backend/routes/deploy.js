@@ -16,10 +16,12 @@ const {
 const { ensureDockerfile } = require('../services/dockerfile');
 const { buildImage, stopAndRemoveContainer, runContainer } = require('../services/docker');
 
-const router = express.Router();
+const router = express.Router(); // why router and not app ? what does it mean sub-route handler ?? 
 
 const BASE_PORT = 3000;
-const DEPLOY_BASE = process.env.DEPLOY_BASE_PATH || '/home/ubuntu/deployer-diddy-repos';
+// local windows path ?
+
+const DEPLOY_BASE = process.env.DEPLOY_BASE_PATH || '/home/ubuntu/deployer-diddy-repos'; // prod
 
 router.get('/repos', verifyToken, async (req, res) => {
   try {
@@ -33,18 +35,18 @@ router.get('/repos', verifyToken, async (req, res) => {
 });
 
 router.post('/', verifyToken, async (req, res) => {
-  const { repoName, repoUrl, envVars } = req.body;
-
+  const { repoName, repoUrl, envVars } = req.body; // env vars are we really taking that now ?
+  // what about encoding the env vars ?
   if (!repoName || !repoUrl) {
     return res.status(400).json({ error: 'Missing repoName or repoUrl' });
   }
 
   try {
-    const user = await getUserByGithubId(req.user.githubId);
+    const user = await getUserByGithubId(req.user.githubId); // are these DB calls ? seems
     const deployment = await createDeployment(req.user.githubId, repoName, repoUrl, BASE_PORT + 0);
 
-    const port = BASE_PORT + deployment.id;
-    await updateDeployment(deployment.id, { port });
+    const port = BASE_PORT + deployment.id; // port logic looks good
+    await updateDeployment(deployment.id, { port }); // register the port in DB
 
     if (envVars && envVars.length > 0) {
       await addEnvVars(deployment.id, envVars);
@@ -70,7 +72,7 @@ router.get('/status/:id', verifyToken, async (req, res) => {
     }
 
     const liveUrl = deployment.status === 'running' ? `http://${process.env.EC2_IP}:${deployment.port}` : null;
-
+    // tf is this syntax man so many = operator, weird syntax, but seems to be a ternary operator, checking if deployment is running and then returning the live URL
     res.json({
       id: deployment.id,
       repoName: deployment.repo_name,
@@ -87,7 +89,7 @@ router.get('/status/:id', verifyToken, async (req, res) => {
 router.get('/list', verifyToken, async (req, res) => {
   try {
     const deployments = await getDeploymentsByUser(req.user.githubId);
-    res.json({
+    res.json({ // whats going on in here ?? 
       deployments: deployments.map((d) => ({
         id: d.id,
         repoName: d.repo_name,
@@ -151,13 +153,13 @@ async function runDeploymentPipeline(deploymentId, accessToken) {
     fs.mkdirSync(repoDir, { recursive: true });
 
     log(`Cloning repo: ${deployment.repo_url}`);
-    await simpleGit().clone(deployment.repo_url, repoDir);
+    await simpleGit().clone(deployment.repo_url, repoDir); // why this way ? why not execute terminal command git clone ? simple-git is a library that provides a simple interface for running Git commands in Node.js, making it easier to handle Git operations programmatically without relying on shell commands.
 
     log('Checking for Dockerfile');
     ensureDockerfile(repoDir);
 
     const imageName = `${deployment.github_id}-${deployment.repo_name}-${deploymentId}`.toLowerCase();
-    const containerName = `deployer-diddy-${deploymentId}`;
+    const containerName = `deployer-diddy-${deploymentId}`; // why so much diff in image and container name ? image name is for docker image, container name is for the running instance of that image, they are different entities in Docker's architecture.
 
     log('Building Docker image');
     await buildImage(repoDir, imageName);

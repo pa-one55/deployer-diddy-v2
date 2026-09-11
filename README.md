@@ -1,68 +1,146 @@
 # deployer-diddy
 
-Clone a repo, build the image, kill the old container, spin up the new one. That's it.
+Deploy GitHub repos to EC2 with Docker. GitHub OAuth, webhooks, auto-redeploy on push.
 
 ---
 
 ## Requirements
 
 - Node.js 18+
+- PostgreSQL
+- Docker
 - Git
-- Docker (running)
+- GitHub OAuth App
 
 ---
 
 ## Setup
 
+### 1. Install dependencies
 ```bash
-git clone <this-repo>
-cd deployer-diddy
-npm i
-npm run deploy
+npm install
+```
+
+### 2. Set up PostgreSQL
+```bash
+# Create database
+createdb deployer_diddy
+
+# Or via psql
+psql -U postgres
+CREATE DATABASE deployer_diddy;
+\q
+```
+
+### 3. Create GitHub OAuth App
+- Go to [GitHub Developer Settings](https://github.com/settings/developers)
+- New OAuth App
+- **Homepage URL:** `http://localhost:3000` (or your EC2 IP)
+- **Callback URL:** `http://localhost:3000/api/auth/callback`
+- Copy **Client ID** and **Client Secret**
+
+### 4. Configure environment
+```bash
+cp .env.example .env
+# Fill in all values in .env
+```
+
+Update `frontend/index.html` line 28 with your `GITHUB_CLIENT_ID`.
+
+### 5. Run
+```bash
+npm start
+```
+
+Open `http://localhost:3000`
+
+---
+
+## How it works
+
+1. **Login with GitHub** → OAuth flow → JWT stored in browser
+2. **Dashboard** → shows all your deployments + live URLs
+3. **Deploy New** → select repo, add env vars → triggers deployment:
+   - Clones repo to `workspace/<id>/repo/`
+   - Auto-generates Dockerfile if missing (Node/Python detected)
+   - Builds Docker image
+   - Stops old container, starts new one
+   - Registers GitHub webhook
+   - Returns live URL: `http://<EC2_IP>:<port>`
+4. **Push to GitHub** → webhook triggers redeploy automatically
+
+---
+
+## API Routes
+
+| Route | Method | Auth | Description |
+|-------|--------|------|-------------|
+| `/api/auth/callback` | GET | - | GitHub OAuth callback |
+| `/api/deploy/repos` | GET | JWT | List user's repos |
+| `/api/deploy` | POST | JWT | Trigger deployment |
+| `/api/deploy/list` | GET | JWT | List all deployments |
+| `/api/deploy/status/:id` | GET | JWT | Get deployment status |
+| `/api/deploy/logs/:id` | GET | JWT | Get deployment logs |
+| `/api/webhook/:deploymentId` | POST | GitHub sig | Redeploy on push |
+
+---
+
+## Database Schema
+
+**users:**
+- `github_id` (PK)
+- `username`
+- `access_token`
+
+**deployments:**
+- `id` (SERIAL PK)
+- `github_id` (FK)
+- `repo_name`
+- `repo_url`
+- `port`
+- `container_id`
+- `status` (building/running/failed)
+
+**env_vars:**
+- `id` (SERIAL PK)
+- `deployment_id` (FK)
+- `key`
+- `value`
+
+---
+
+## Folder Structure
+
+```
+deployer-diddy/
+├── backend/
+│   ├── index.js              # Express server
+│   ├── routes/               # auth, deploy, webhook
+│   ├── services/             # github, docker, dockerfile
+│   ├── db/                   # PostgreSQL queries
+│   └── middleware/           # JWT auth
+├── frontend/                 # Plain HTML/CSS/JS
+│   ├── index.html            # Login page
+│   ├── dashboard.html        # Deployments list
+│   ├── deploy.html           # Deploy form
+│   └── logs.html             # Log viewer
+└── workspace/                # Cloned repos + logs
 ```
 
 ---
 
-## What it does
+## Tech Stack
 
-1. Asks how you want to provide config — CLI prompts or a JSON file
-2. Clones your repo into `workspace/<app-name>/repo/`
-3. Builds a Docker image from the repo's Dockerfile
-4. Stops and removes the old container (if one exists)
-5. Spins up the new container
-6. Asks if you want to deploy again or exit
+- **Backend:** Node.js, Express, PostgreSQL
+- **Auth:** GitHub OAuth, JWT
+- **Deployment:** Docker, simple-git
+- **Frontend:** Vanilla JS (no frameworks)
 
 ---
 
-## Config (JSON option)
+## Notes
 
-```json
-{
-  "appName": "my-app",
-  "repoUrl": "https://github.com/user/repo",
-  "branch": "main",
-  "hostPort": "8080",
-  "containerPort": "3000",
-  "envVars": {
-    "NODE_ENV": "production"
-  }
-}
-```
-
-`envVars` is optional.
-
----
-
-## Logs
-
-Every deploy writes logs to:
-
-```
-workspace/<app-name>/logs/deploy.log
-```
-
----
-
-## Note
-
-Your app's repo needs a `Dockerfile` at the root. deployer-diddy doesn't run build commands — that's the Dockerfile's job.
+- Port assignment: `3000 + deployment_id`
+- Logs: `workspace/<id>/logs/deploy.log`
+- Dockerfile auto-generated for Node (package.json) and Python (requirements.txt)
+- Webhooks verified via HMAC signature
